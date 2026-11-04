@@ -2,84 +2,167 @@ import sqlite3
 
 DB_NAME = "foodlicius.db"
 
-# Lista de recetas base
+# Recetas con consumo por ración (portion_grams: en gramos o unidades)
 RECETAS = [
-    {"name": "Pasta con tomate y atún", "meal_type": "almuerzo", "keywords": ["macarrones", "tomate frito", "atún"]},
-    {"name": "Pasta con tomate y bacon", "meal_type": "almuerzo", "keywords": ["macarrones", "tomate frito", "bacon"]},
-    {"name": "Lasaña tradicional de carne", "meal_type": "almuerzo", "keywords": ["lasaña", "carne picada", "tomate frito", "mozzarella"]},
-    {"name": "Wok de arroz con carne y verduras", "meal_type": "almuerzo", "keywords": ["arroz", "carne", "brócoli", "zanahoria", "soja"]},
-    {"name": "Lomo con manzana y puré de patata", "meal_type": "almuerzo", "keywords": ["lomo", "manzana", "patata"]},
-    {"name": "Ensalada de pollo y mozzarella", "meal_type": "cena", "keywords": ["pechuga", "canónigos", "tomate", "mozzarella"]},
-    {"name": "Lasaña de calabacín y carne", "meal_type": "cena", "keywords": ["calabacín", "carne picada", "tomate frito", "mozzarella"]},
-    {"name": "Salmón con soja y verduras salteadas", "meal_type": "cena", "keywords": ["salmón", "soja", "brócoli", "zanahoria"]},
-    {"name": "Pollo a la plancha con patatas y verdura", "meal_type": "cena", "keywords": ["pechuga", "patata", "brócoli", "zanahoria"]},
-    {"name": "Pescado con ensalada y patatas", "meal_type": "cena", "keywords": ["merluza", "canónigos", "tomate", "patata"]},
+    {
+        "name": "Pasta con tomate y atún",
+        "meal_type": "almuerzo",
+        "ingredients": [
+            {"kw": "plumas", "portion_grams": 100},
+            {"kw": "tomate frito", "portion_grams": 100},
+            {"kw": "atún claro en aceite de oliva", "portion_grams": 80}
+        ]
+    },
+    {
+        "name": "Pasta salteada con calabacín",
+        "meal_type": "cena",
+        "ingredients": [
+            {"kw": "plumas", "portion_grams": 100},
+            {"kw": "calabacín", "portion_grams": 150}
+        ]
+    },
+    {
+        "name": "Pasta con tomate y bacon",
+        "meal_type": "almuerzo",
+        "ingredients": [
+            {"kw": "plumas", "portion_grams": 100},
+            {"kw": "tomate frito", "portion_grams": 100},
+            {"kw": "bacon en tiras", "portion_grams": 60}
+        ]
+    },
+    {
+        "name": "Arroz con tomate y huevos",
+        "meal_type": "almuerzo",
+        "ingredients": [
+            {"kw": "arroz redondo", "portion_grams": 100},
+            {"kw": "tomate frito", "portion_grams": 100},
+            {"kw": "huevos grandes l", "portion_grams": 120}  # ~2 huevos
+        ]
+    },
+    {
+        "name": "Wok de arroz con carne y verduras",
+        "meal_type": "almuerzo",
+        "ingredients": [
+            {"kw": "arroz redondo", "portion_grams": 100},
+            {"kw": "cintas de lomo", "portion_grams": 150},
+            {"kw": "brócoli", "portion_grams": 120},
+            {"kw": "zanahoria", "portion_grams": 80},
+            {"kw": "salsa de soja", "portion_grams": 20}
+        ]
+    },
+    {
+        "name": "Pollo a la plancha con patatas y verdura",
+        "meal_type": "cena",
+        "ingredients": [
+            {"kw": "pechuga de pollo filetes", "portion_grams": 150},
+            {"kw": "patatas", "portion_grams": 200},
+            {"kw": "brócoli", "portion_grams": 120}
+        ]
+    },
+    {
+        "name": "Salteado de calabacín con lomo de cerdo",
+        "meal_type": "cena",
+        "ingredients": [
+            {"kw": "calabacín", "portion_grams": 200},
+            {"kw": "cintas de lomo", "portion_grams": 150}
+        ]
+    },
+    {
+        "name": "Lomo con patatas al horno",
+        "meal_type": "almuerzo",
+        "ingredients": [
+            {"kw": "cintas de lomo", "portion_grams": 150},
+            {"kw": "patatas", "portion_grams": 250}
+        ]
+    },
+    {
+        "name": "Lasaña de calabacín y carne",
+        "meal_type": "cena",
+        "ingredients": [
+            {"kw": "calabacín", "portion_grams": 250},
+            {"kw": "carne picada vacuno y cerdo", "portion_grams": 150},
+            {"kw": "tomate frito", "portion_grams": 100},
+            {"kw": "mozzarella rallada", "portion_grams": 50}
+        ]
+    },
+    {
+        "name": "Ensalada de pollo con tomate",
+        "meal_type": "cena",
+        "ingredients": [
+            {"kw": "pechuga de pollo filetes", "portion_grams": 150},
+            {"kw": "canónigos", "portion_grams": 50},
+            {"kw": "tomate ensalada", "portion_grams": 150}
+        ]
+    }
 ]
 
-def vincular_recetas():
+def vincular():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # 1. Asegurar que las tablas de recetas existen
+    cursor.execute("DROP TABLE IF EXISTS recipe_ingredients")
+    cursor.execute("DROP TABLE IF EXISTS recipes")
+
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS recipes (
+    CREATE TABLE recipes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         meal_type TEXT NOT NULL,
-        servings INTEGER DEFAULT 2
+        servings INTEGER DEFAULT 1
     )
     """)
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS recipe_ingredients (
+    CREATE TABLE recipe_ingredients (
         recipe_id INTEGER,
         product_id TEXT,
-        quantity_needed REAL,
+        portion_grams REAL,
         PRIMARY KEY (recipe_id, product_id),
         FOREIGN KEY (recipe_id) REFERENCES recipes(id),
         FOREIGN KEY (product_id) REFERENCES products(id)
     )
     """)
 
-    print(" Registrando recetas base...")
+    print(" Registrando recetas con gramaje por ración...")
 
     for r in RECETAS:
-        # 2. Insertar receta evitando duplicados
-        cursor.execute("SELECT id FROM recipes WHERE name = ?", (r["name"],))
-        existe = cursor.fetchone()
+        cursor.execute(
+            "INSERT INTO recipes (name, meal_type, servings) VALUES (?, ?, 1)",
+            (r["name"], r["meal_type"])
+        )
+        recipe_id = cursor.lastrowid
+        print(f"\n Plato: {r['name']}")
 
-        if existe:
-            recipe_id = existe[0]
-        else:
-            cursor.execute(
-                "INSERT INTO recipes (name, meal_type, servings) VALUES (?, ?, 2)",
-                (r["name"], r["meal_type"])
-            )
-            recipe_id = cursor.lastrowid
+        for ing in r["ingredients"]:
+            kw = ing["kw"]
+            terminos = kw.lower().split()
+            where_clause = " AND ".join(["LOWER(name) LIKE ?"] * len(terminos))
+            where_clause += " AND LOWER(name) NOT LIKE '%paté%' AND LOWER(name) NOT LIKE '%sabor%'"
+            params = [f"%{t}%" for t in terminos]
 
-        print(f"\n Plato: {r['name']} (ID: {recipe_id})")
-
-        # 3. Intentar asociar ingredientes buscando por palabra clave
-        for kw in r["keywords"]:
-            cursor.execute(
-                "SELECT id, name, price FROM products WHERE name LIKE ? LIMIT 1",
-                (f"%{kw}%",)
-            )
+            cursor.execute(f"SELECT id, name, price, packaging FROM products WHERE {where_clause} ORDER BY price ASC LIMIT 1", params)
             prod = cursor.fetchone()
 
-            if prod:
-                prod_id, prod_name, prod_price = prod
+            if not prod:
                 cursor.execute(
-                    "INSERT OR IGNORE INTO recipe_ingredients (recipe_id, product_id, quantity_needed) VALUES (?, ?, ?)",
-                    (recipe_id, prod_id, 1.0)
+                    "SELECT id, name, price, packaging FROM products WHERE LOWER(name) LIKE ? AND LOWER(name) NOT LIKE '%paté%' ORDER BY price ASC LIMIT 1",
+                    (f"%{terminos[0]}%",)
                 )
-                print(f"    Ingrediente: {prod_name} ({prod_price} €)")
+                prod = cursor.fetchone()
+
+            if prod:
+                prod_id, prod_name, prod_price, packaging = prod
+                cursor.execute(
+                    "INSERT OR IGNORE INTO recipe_ingredients (recipe_id, product_id, portion_grams) VALUES (?, ?, ?)",
+                    (recipe_id, prod_id, ing["portion_grams"])
+                )
+                print(f"    {prod_name} ({prod_price} €) -> {ing['portion_grams']} g/ración")
             else:
-                print(f"   ⚠️ No encontrado: '{kw}'")
+                print(f"   ⚠️ No encontrado: {kw}")
 
     conn.commit()
     conn.close()
-    print("\n ¡Proceso completado!")
+    print("\n Base de datos actualizada con gramajes.")
 
 if __name__ == "__main__":
-    vincular_recetas()
+    vincular()
