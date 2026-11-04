@@ -4,23 +4,19 @@ import re
 DB_NAME = "foodlicius.db"
 
 def parse_weight_in_grams(packaging_str, default_weight=500.0):
-    """Extrae el peso total en gramos a partir de textos como 'Paquete 1 kg', 'Bote 400 g', 'Malla 3 kg', etc."""
     if not packaging_str:
         return default_weight
 
     text = packaging_str.lower().replace(",", ".")
 
-    # Buscar patrones en kilos (ej: 1 kg, 1.5 kg, 3 kg)
     match_kg = re.search(r"(\d+(?:\.\d+)?)\s*kg", text)
     if match_kg:
         return float(match_kg.group(1)) * 1000.0
 
-    # Buscar patrones en gramos (ej: 500 g, 350 g)
     match_g = re.search(r"(\d+(?:\.\d+)?)\s*g", text)
     if match_g:
         return float(match_g.group(1))
 
-    # Buscar patrones por docenas o unidades (ej: 12 uds, 6 uds) -> aprox 60g por huevo/unidad
     match_uds = re.search(r"(\d+)\s*(?:uds|unidades)", text)
     if match_uds:
         return float(match_uds.group(1)) * 60.0
@@ -55,8 +51,7 @@ def get_recipes_data():
             "pack_grams": total_grams
         })
 
-    valid_recipes = [r for r in recipe_map.values() if len(r["ingredients"]) > 0]
-    return valid_recipes
+    return [r for r in recipe_map.values() if len(r["ingredients"]) > 0]
 
 def generate_weekly_menu(budget_max):
     recipes = get_recipes_data()
@@ -64,12 +59,8 @@ def generate_weekly_menu(budget_max):
         return None, "No hay recetas disponibles en la base de datos."
 
     dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-    
-    # Despensa adquirida: product_id -> {datos del producto, gramos_disponibles, packs_comprados}
     pantry = {}
-    plan = []
     
-    # Horarios a planificar: [(Lunes, almuerzo), (Lunes, cena), (Martes, almuerzo)...]
     slots = []
     for d in dias_semana:
         slots.append((d, "almuerzo"))
@@ -78,10 +69,8 @@ def generate_weekly_menu(budget_max):
     current_day_plan = {}
 
     for day, slot_type in slots:
-        # Evaluar qué receta cuesta menos dinero NUEVO en paquetes de Mercadona
         candidatas = []
         for r in recipes:
-            # Preferir recetas acordes al momento o adaptables
             coste_adicional = 0.0
             packs_a_sumar = {}
 
@@ -91,11 +80,9 @@ def generate_weekly_menu(budget_max):
                 stock = pantry[pid]["grams_left"] if pid in pantry else 0.0
 
                 if stock < needed:
-                    # Necesitamos comprar 1 paquete más
                     coste_adicional += ing["price"]
                     packs_a_sumar[pid] = ing["pack_grams"]
 
-            # Comprobar si entra en el presupuesto restante
             coste_actual = sum(item["price"] * item["packs"] for item in pantry.values())
             if coste_actual + coste_adicional <= budget_max:
                 candidatas.append({
@@ -105,15 +92,12 @@ def generate_weekly_menu(budget_max):
                 })
 
         if not candidatas:
-            # Presupuesto agotado para comprar nuevos paquetes
             break
 
-        # Elegir la que optimice: 1º las que reutilicen stock existente (added_cost == 0), 2º menor coste
         candidatas.sort(key=lambda c: (c["added_cost"], c["recipe"]["meal_type"] != slot_type))
         elegida = candidatas[0]
         receta_obj = elegida["recipe"]
 
-        # Aplicar compra si hacía falta
         for ing in receta_obj["ingredients"]:
             pid = ing["id"]
             if pid not in pantry:
@@ -129,10 +113,8 @@ def generate_weekly_menu(budget_max):
                 pantry[pid]["packs"] += 1
                 pantry[pid]["grams_left"] += ing["pack_grams"]
 
-            # Descontar el consumo de esta ración
             pantry[pid]["grams_left"] -= ing["portion_grams"]
 
-        # Registrar en el plan del día
         if day not in current_day_plan:
             current_day_plan[day] = {"dia": day, "almuerzo": "-", "cena": "-"}
         current_day_plan[day][slot_type] = receta_obj["name"]
@@ -140,7 +122,6 @@ def generate_weekly_menu(budget_max):
     coste_final = round(sum(p["price"] * p["packs"] for p in pantry.values()), 2)
     plan_resultado = list(current_day_plan.values())
 
-    # Formatear lista de compras
     shopping_list = [
         {
             "id": p["id"],
@@ -148,7 +129,7 @@ def generate_weekly_menu(budget_max):
             "price": p["price"],
             "packs": p["packs"],
             "subtotal": round(p["price"] * p["packs"], 2),
-            "stock_remanente": f"Quedan ~{int(p['grams_left'])} g para siguientes semanas"
+            "stock_remanente": f"Quedan ~{int(p['grams_left'])} g"
         }
         for p in pantry.values()
     ]
@@ -161,7 +142,3 @@ def generate_weekly_menu(budget_max):
         "plan": plan_resultado,
         "shopping_list": shopping_list
     }, None
-
-if __name__ == "__main__":
-    res, err = generate_weekly_menu(5.0)
-    print(res)
