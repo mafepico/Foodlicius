@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from menu_generator import generate_weekly_menu, get_recipes_data
+from Proyecto.menu_generator import generate_weekly_menu, get_recipes_with_ingredients
 
 app = FastAPI(
     title="Foodlicius API",
@@ -26,10 +26,7 @@ def home():
 
 @app.get("/recipes")
 def list_recipes():
-    """Devuelve las recetas disponibles con sus ingredientes y gramajes."""
-    recipes = get_recipes_data()
-    almuerzos = [r for r in recipes if r["meal_type"] == "almuerzo"]
-    cenas = [r for r in recipes if r["meal_type"] == "cena"]
+    almuerzos, cenas = get_recipes_with_ingredients()
     return {
         "total_almuerzos": len(almuerzos),
         "total_cenas": len(cenas),
@@ -39,7 +36,6 @@ def list_recipes():
 
 @app.get("/menu/generate")
 def get_menu(budget: float = Query(5.0, ge=1.0, le=300.0, description="Presupuesto máximo en euros")):
-    """Genera un menú adaptativo optimizado según el presupuesto ingresado."""
     resultado, error = generate_weekly_menu(budget)
     if error:
         raise HTTPException(status_code=400, detail=error)
