@@ -8,9 +8,11 @@ def get_recipes_with_ingredients():
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
+    # Obtener recetas
     cursor.execute("SELECT id, name, meal_type FROM recipes")
     recipes = [dict(r) for r in cursor.fetchall()]
 
+    # Obtener ingredientes asociados por receta
     cursor.execute("""
         SELECT ri.recipe_id, p.id as product_id, p.name as product_name, p.price
         FROM recipe_ingredients ri
@@ -28,114 +30,83 @@ def get_recipes_with_ingredients():
                 "price": row["price"]
             })
 
-    # Filtrar solo recetas que tengan ingredientes vinculados
-    valid_recipes = [r for r in recipe_map.values() if len(r["ingredients"]) > 0]
-    
-    # Calcular coste estimado individual de cada plato
-    for r in valid_recipes:
-        r["approx_cost"] = sum(i["price"] for i in r["ingredients"])
-
-    # Ordenar por las más baratas primero
-    valid_recipes.sort(key=lambda x: x["approx_cost"])
-    return valid_recipes
+    almuerzos = [r for r in recipe_map.values() if r["meal_type"] == "almuerzo"]
+    cenas = [r for r in recipe_map.values() if r["meal_type"] == "cena"]
+    return almuerzos, cenas
 
 def generate_weekly_menu(budget_max):
-    recipes = get_recipes_with_ingredients()
+    almuerzos, cenas = get_recipes_with_ingredients()
 
-    if not recipes:
-        return None, "No hay recetas disponibles en la base de datos."
+    if not almuerzos or not cenas:
+        return None, "Faltan recetas en la base de datos."
 
-    # Encontrar el producto/ingrediente más barato para validar umbral mínimo
-    precio_minimo = min(r["approx_cost"] for r in recipes)
-    if budget_max < min(i["price"] for r in recipes for i in r["ingredients"]):
-        return None, f"El presupuesto de {budget_max} € es inferior al ingrediente más barato del supermercado."
+    dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    mejor_plan = None
+    mejor_coste = float("inf")
+    mejor_cesta = {}
 
-    dias_nombres = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-    
-    mejor_plan = []
-    cesta_compra = {}
-    coste_acumulado = 0.0
+    for _ in range(1000):
+        plan_semanal = []
+        productos_semana = {}
+        ultimo_almuerzo = None
+        ultima_cena = None
 
-    # Construir comidas de forma incremental hasta agotar el presupuesto
-    comidas_disponibles = recipes.copy()
-    
-    # Intentar llenar hasta 7 días (almuerzo y cena = 14 tomas)
-    idx_dia = 0
-    toma = "almuerzo"
-    
-    while idx_dia < 7:
-        plato_elegido = None
-        
-        # Buscar un plato cuyos NUEVOS ingredientes agregados no superen el presupuesto restante
-        random.shuffle(comidas_disponibles)
-        # Priorizar recetas que compartan ingredientes que ya estén en la cesta
-        comidas_disponibles.sort(
-            key=lambda r: sum(i["price"] for i in r["ingredients"] if i["id"] not in cesta_compra)
-        )
+        for dia in dias:
+            # Seleccionar almuerzo sin repetir el del día previo
+            opc_almuerzo = [a for a in almuerzos if a["id"] != ultimo_almuerzo]
+            almuerzo = random.choice(opc_almuerzo)
 
-        for receta in comidas_disponibles:
-            # Calcular cuánto sumaría a la cesta agregar esta receta
-            nuevos_costes = sum(
-                i["price"] for i in receta["ingredients"] if i["id"] not in cesta_compra
-            )
-            if coste_acumulado + nuevos_costes <= budget_max:
-                plato_elegido = receta
-                coste_acumulado += nuevos_costes
-                for i in receta["ingredients"]:
-                    cesta_compra[i["id"]] = i
-                break
+            # Seleccionar cena sin repetir la del día previo
+            opc_cena = [c for c in cenas if c["id"] != ultima_cena]
+            cena = random.choice(opc_cena)
 
-        if not plato_elegido:
-            # Ya no alcanza el dinero para más comidas sin pasarse de presupuesto
-            break
+            # Registrar ingredientes necesarios en la cesta común
+            for ing in almuerzo["ingredients"] + cena["ingredients"]:
+                productos_semana[ing["id"]] = ing
 
-        # Registrar la comida en el plan
-        dia_actual = dias_nombres[idx_dia]
-        if toma == "almuerzo":
-            mejor_plan.append({
-                "dia": dia_actual,
-                "almuerzo": plato_elegido["name"],
-                "cena": "Aprovechamiento / Ayuno / Por planificar"
+            plan_semanal.append({
+                "dia": dia,
+                "almuerzo": almuerzo["name"],
+                "cena": cena["name"]
             })
-            toma = "cena"
-        else:
-            mejor_plan[-1]["cena"] = plato_elegido["name"]
-            toma = "almuerzo"
-            idx_dia += 1
+
+            ultimo_almuerzo = almuerzo["id"]
+            ultima_cena = cena["id"]
+
+        # Coste real sumando cada producto del supermercado una sola vez
+        coste_total_cesta = round(sum(p["price"] for p in productos_semana.values()), 2)
+
+        if coste_total_cesta <= budget_max and coste_total_cesta < mejor_coste:
+            mejor_coste = coste_total_cesta
+            mejor_plan = plan_semanal
+            mejor_cesta = productos_semana
 
     if not mejor_plan:
-        # Si ni siquiera entra un plato completo, devolvemos la receta más económica posible
-        receta_barata = recipes[0]
-        return {
-            "budget_max": budget_max,
-            "total_cost": round(receta_barata["approx_cost"], 2),
-            "savings": round(budget_max - receta_barata["approx_cost"], 2),
-            "mensaje": f"Presupuesto ajustado: se sugiere 1 plato base económico.",
-            "plan": [{"dia": "Día 1", "almuerzo": receta_barata["name"], "cena": "Restos / Opcional"}],
-            "shopping_list": receta_barata["ingredients"]
-        }, None
+        return None, f"No se encontró un menú que entre en {budget_max} €. La cesta base mínima ronda un valor más alto. Prueba con 70 € o 75 €."
 
     return {
         "budget_max": budget_max,
-        "total_cost": round(coste_acumulado, 2),
-        "savings": round(budget_max - coste_acumulado, 2),
-        "total_comidas_cubiertas": len(mejor_plan) * 2 if mejor_plan[-1]["cena"] != "Aprovechamiento / Ayuno / Por planificar" else len(mejor_plan) * 2 - 1,
+        "total_cost": mejor_coste,
+        "savings": round(budget_max - mejor_coste, 2),
         "plan": mejor_plan,
-        "shopping_list": list(cesta_compra.values())
+        "shopping_list": list(mejor_cesta.values())
     }, None
 
 if __name__ == "__main__":
-    for test_budget in [5.0, 15.0, 60.0]:
-        print(f"\n================ PROBANDO CON {test_budget} € ================")
-        res, err = generate_weekly_menu(test_budget)
-        if err:
-            print(f"❌ {err}")
-        else:
-            print(f" Coste Cesta: {res['total_cost']} € | Ahorro: {res['savings']} €")
-            print(f" Comidas logradas: {len(res['plan'])} días")
-            for p in res["plan"]:
-                print(f"  - {p['dia']}: {p['almuerzo']} | {p['cena']}")
-            print(f" Productos en la compra ({len(res['shopping_list'])}):")
-            for prod in res["shopping_list"]:
-                print(f"    * {prod['name']} ({prod['price']} €)")
-            
+    presupuesto = 60.0
+    resultado, error = generate_weekly_menu(presupuesto)
+
+    if error:
+        print(f"❌ {error}")
+    else:
+        print(f"\n Menú Semanal Generado (Tope: {resultado['budget_max']} €)")
+        print(f" Coste Total Cesta: {resultado['total_cost']} € | Ahorro: {resultado['savings']} €\n")
+        print(f"{'Día':<12} | {'Almuerzo':<35} | {'Cena':<35}")
+        print("-" * 85)
+        for d in resultado["plan"]:
+            print(f"{d['dia']:<12} | {d['almuerzo']:<35} | {d['cena']:<35}")
+
+        print(f"\n Lista de la compra Mercadona ({len(resultado['shopping_list'])} productos):")
+        print("-" * 65)
+        for item in resultado["shopping_list"]:
+            print(f"- {item['name']:<50} | {item['price']} €")

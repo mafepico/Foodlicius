@@ -1,73 +1,78 @@
 import httpx
+import sqlite3
 import time
-from database import init_db, save_products
 
-def sincronizar_catalogo(codigo_postal="46001", limite_categorias=5):
-    # 1. Asegurar que la tabla existe
-    init_db()
-    
-    url_base = "https://tienda.mercadona.es/api/categories/"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-    }
-    
-    print(f" Iniciando descarga del catálogo (CP: {codigo_postal})...")
-    
-    with httpx.Client(headers=headers, timeout=20.0) as client:
-        # Obtener las categorías principales
-        resp = client.get(f"{url_base}?postal_code={codigo_postal}")
-        resp.raise_for_status()
-        categorias_principales = resp.json().get("results", [])
+DB_NAME = "foodlicius.db"
+POSTAL_CODE = "46001"
+BASE_URL = f"https://tienda.mercadona.es/api/categories/?postal_code={POSTAL_CODE}"
+
+def sync():
+    print(" Conectando a la API de Mercadona...")
+    with httpx.Client(timeout=30.0) as client:
+        res = client.get(BASE_URL)
+        if res.status_code != 200:
+            print(f"❌ Error al consultar categorías principales: {res.status_code}")
+            return
         
-        productos_totales = []
-        contador = 0
-        
-        for cat in categorias_principales:
-            nombre_cat_padre = cat.get("name")
-            
+        root_data = res.json()
+        categories = root_data.get("results", [])
+        print(f" Encontradas {len(categories)} secciones raíz.")
+
+        # Recolectar todos los IDs de subcategorías con productos
+        subcat_ids = []
+        for cat in categories:
             for sub in cat.get("categories", []):
-                sub_id = sub.get("id")
-                sub_nombre = sub.get("name")
+                subcat_ids.append((sub.get("id"), f"{cat.get('name')} > {sub.get('name')}"))
+
+        print(f" Total subcategorías a descargar: {len(subcat_ids)}")
+        products_dict = {}
+
+        for index, (sub_id, cat_path) in enumerate(subcat_ids, start=1):
+            url = f"https://tienda.mercadona.es/api/categories/{sub_id}/?postal_code={POSTAL_CODE}"
+            try:
+                sub_res = client.get(url)
+                if sub_res.status_code != 200:
+                    continue
                 
-                print(f"⏳ Descargando: {nombre_cat_padre} -> {sub_nombre}...")
-                
-                try:
-                    url_sub = f"{url_base}{sub_id}/?postal_code={codigo_postal}"
-                    sub_resp = client.get(url_sub)
-                    sub_resp.raise_for_status()
-                    sub_data = sub_resp.json()
-                    
-                    # Recorrer productos dentro de la subcategoría
-                    for grupo in sub_data.get("categories", [sub_data]):
-                        for prod in grupo.get("products", []):
-                            precio_info = prod.get("price_instructions", {})
-                            unit_price = precio_info.get("unit_price")
-                            
-                            if unit_price is not None:
-                                productos_totales.append({
-                                    "id": str(prod.get("id")),
-                                    "name": prod.get("display_name"),
-                                    "price": float(unit_price),
-                                    "packaging": prod.get("packaging") or "ud",
-                                    "category": f"{nombre_cat_padre} / {sub_nombre}",
-                                    "image_url": prod.get("thumbnail")
-                                })
-                except Exception as e:
-                    print(f" Error en subcategoría {sub_id}: {e}")
-                
-                # Pausa de cortesía para no saturar los servidores de Mercadona
-                time.sleep(0.5)
-            
-            contador += 1
-            # Límite inicial de categorías principales para que no tarde 15 minutos en la primera prueba
-            if contador >= limite_categorias:
-                break
-        
-        # Guardar en SQLite
-        if productos_totales:
-            save_products(productos_totales)
-            print(f"\n ¡Completado! Se guardaron {len(productos_totales)} productos en la base de datos.")
+                sub_data = sub_res.json()
+                for leaf in sub_data.get("categories", []):
+                    for prod in leaf.get("products", []):
+                        pid = str(prod.get("id"))
+                        price_info = prod.get("price_instructions", {})
+                        unit_price = price_info.get("unit_price")
+                        
+                        if pid and unit_price is not None:
+                            products_dict[pid] = (
+                                pid,
+                                prod.get("display_name", ""),
+                                float(unit_price),
+                                price_info.get("reference_format", ""),
+                                cat_path,
+                                prod.get("thumbnail", "")
+                            )
+                print(f" [{index}/{len(subcat_ids)}] Sincronizada: {cat_path} (Acumulados: {len(products_dict)})")
+                time.sleep(0.05)  # Breve pausa para no saturar la red
+            except Exception as e:
+                print(f"⚠️ Error en subcategoría {sub_id}: {e}")
+                continue
+
+    # Guardar en SQLite
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.executemany("""
+    INSERT INTO products (id, name, price, packaging, category, image_url)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+        price = excluded.price,
+        packaging = excluded.packaging,
+        category = excluded.category,
+        image_url = excluded.image_url,
+        updated_at = CURRENT_TIMESTAMP
+    """, list(products_dict.values()))
+
+    conn.commit()
+    conn.close()
+    print(f"\n ¡Catálogo completo actualizado con éxito! Total guardados: {len(products_dict)}")
 
 if __name__ == "__main__":
-    sincronizar_catalogo(limite_categorias=3)
+    sync()
