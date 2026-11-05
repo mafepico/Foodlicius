@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from menu_generator import generate_weekly_menu, get_recipes_with_ingredients
+from menu_generator import generate_weekly_menu, get_recipes_data
 
 app = FastAPI(
     title="Foodlicius API",
@@ -26,7 +26,9 @@ def home():
 
 @app.get("/recipes")
 def list_recipes():
-    almuerzos, cenas = get_recipes_with_ingredients()
+    recipes = get_recipes_data()
+    almuerzos = [r for r in recipes if r["meal_type"] == "almuerzo"]
+    cenas = [r for r in recipes if r["meal_type"] == "cena"]
     return {
         "total_almuerzos": len(almuerzos),
         "total_cenas": len(cenas),

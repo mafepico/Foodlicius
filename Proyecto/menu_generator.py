@@ -1,10 +1,6 @@
 import sqlite3
-<<<<<<< Updated upstream
-import re
-=======
 import random
 from pathlib import Path
->>>>>>> Stashed changes
 
 DB_NAME = str(Path(__file__).resolve().parent / "foodlicius.db")
 
