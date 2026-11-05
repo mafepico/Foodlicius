@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from Proyecto.menu_generator import generate_weekly_menu, get_recipes_with_ingredients
+from menu_generator import generate_weekly_menu, get_recipes_with_ingredients
 
 app = FastAPI(
     title="Foodlicius API",
