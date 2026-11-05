@@ -1,7 +1,12 @@
 import sqlite3
+<<<<<<< Updated upstream
 import re
+=======
+import random
+from pathlib import Path
+>>>>>>> Stashed changes
 
-DB_NAME = "foodlicius.db"
+DB_NAME = str(Path(__file__).resolve().parent / "foodlicius.db")
 
 def parse_weight_in_grams(packaging_str, default_weight=500.0):
     if not packaging_str:
